@@ -35,27 +35,142 @@ async function run() {
     //does actions here
     const database = client.db(process.env.DATABASE_NAME);
     const profilecollection = database.collection('lawyer_sp_profiles');
-    app.post('/api/legal_profiles',  async (req, res)  => {
-        const profile = req.body;
-        const result = await profilecollection.insertOne(profile);
-        res.send(result);
-      
-    })
-    
-    app.get('/api/laywer', async (req, res) => {
-        const cursor = profilecollection.find();
-        const result = await cursor.toArray();
-        res.send(result);
-    })
+    // app.post('/api/legal_profiles',  async (req, res)  => {
+    //   //here we need to check if there is entry having lawyer_id inside the profilecollection
+    //    console.log(req.body);
+    //    console.log(req.body.lawyer_id);
+    //    //return;
+    //     const profile = req.body;
+    //     const result = await profilecollection.insertOne(profile);
+    //     res.send(result);
+
+    // })
+
+    app.post('/api/legal_profiles', async (req, res) => {
+
+      const profile = req.body;
+
+      const result = await profilecollection.updateOne(
+        {
+          lawyer_id: profile.lawyer_id
+        },
+        {
+          $set: profile
+        },
+        {
+          upsert: true
+        }
+      );
+      //console.log(result);
+      res.send(result);
+
+    });
+    //we need to catch query param
+    // app.get('/api/laywer', async (req, res) => {
+    //     const query = {};
+    //     console.log(query);
+    //     if(req.query.specializations){
+    //       query.specializations = req.query.specializations;
+    //     }
+    //     const cursor = profilecollection.find();
+    //     const result = await cursor.toArray();
+    //     res.send(result);
+
+    // })
+
+    app.get('/api/lawyer', async (req, res) => {
+
+      const {
+        search,
+        specialization,
+        sort
+      } = req.query;
+
+      const query = {
+        public: true,
+        status: 'active'
+      };
+
+      // Search
+
+      if (search) {
+
+        query.$or = [
+          {
+            name: {
+              $regex: search,
+              $options: 'i'
+            }
+          },
+          {
+            bio: {
+              $regex: search,
+              $options: 'i'
+            }
+          }
+        ];
+      }
+
+      // Filter by specialization
+
+      if (specialization) {
+
+        query.specializations = specialization;
+
+        // alternatively:
+        // query.specializations = { $in: [specialization] };
+      }
+
+      let cursor = profilecollection.find(query);
+      // Sorting
+      if (sort === 'fee_asc') {
+        cursor = cursor.sort({
+          fee: 1
+        });
+      } else if (sort === 'fee_desc') {
+        cursor = cursor.sort({
+          fee: -1
+        });
+      } else if (sort === 'name_asc') {
+        cursor = cursor.sort({
+          name: 1
+        });
+      } else if (sort === 'name_desc') {
+        cursor = cursor.sort({
+          name: -1
+        });
+      }
+
+
+      //pageinations
+      if(req.query.page){
+        const page = req.query.page;
+        const perpage = 12;
+        const skipItems = (page -1 ) * perpage;
+        const total = await profilecollection.countDocuments(query);
+        const cursor = profilecollection.find(query).skip(skipItems).limit(perpage);
+        const lawyers = await cursor.toArray();
+        res.send({total, lawyers});
+      }
+      const result = await cursor.toArray();
+
+      res.send(result);
+
+    });
 
     app.get('/api/get-legal-profile/:lawyer_id', async (req, res) => {
-        const lawyer_id = req.params.lawyer_id;
-        const query = { lawyer_id: lawyer_id };
-        const result = await profilecollection.findOne(query);
-          //const array = await result.toArray();
-        res.send(result);
+      const lawyer_id = req.params.lawyer_id;
+      const query = { lawyer_id: lawyer_id };
+      const result = await profilecollection.findOne(query);
+      //const array = await result.toArray();
+      res.send(result);
     })
-   
+
+    //veryfytoken of the request middleware
+
+
+
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
