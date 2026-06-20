@@ -42,6 +42,20 @@ async function run() {
       
     })
     
+    app.get('/api/laywer', async (req, res) => {
+        const cursor = profilecollection.find();
+        const result = await cursor.toArray();
+        res.send(result);
+    })
+
+    app.get('/api/get-legal-profile/:lawyer_id', async (req, res) => {
+        const lawyer_id = req.params.lawyer_id;
+        const query = { lawyer_id: lawyer_id };
+        const result = await profilecollection.findOne(query);
+          //const array = await result.toArray();
+        res.send(result);
+    })
+   
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
