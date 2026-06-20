@@ -78,12 +78,93 @@ async function run() {
 
     // })
 
+    // app.get('/api/lawyer', async (req, res) => {
+
+    //   const {
+    //     search,
+    //     specialization,
+    //     sort
+    //   } = req.query;
+
+    //   const query = {
+    //     public: true,
+    //     status: 'active'
+    //   };
+
+    //   // Search
+
+    //   if (search) {
+
+    //     query.$or = [
+    //       {
+    //         name: {
+    //           $regex: search,
+    //           $options: 'i'
+    //         }
+    //       },
+    //       {
+    //         bio: {
+    //           $regex: search,
+    //           $options: 'i'
+    //         }
+    //       }
+    //     ];
+    //   }
+
+    //   // Filter by specialization
+
+    //   if (specialization) {
+
+    //     query.specializations = specialization;
+
+    //     // alternatively:
+    //     // query.specializations = { $in: [specialization] };
+    //   }
+
+    //   let cursor = profilecollection.find(query);
+    //   // Sorting
+    //   if (sort === 'fee_asc') {
+    //     cursor = cursor.sort({
+    //       fee: 1
+    //     });
+    //   } else if (sort === 'fee_desc') {
+    //     cursor = cursor.sort({
+    //       fee: -1
+    //     });
+    //   } else if (sort === 'name_asc') {
+    //     cursor = cursor.sort({
+    //       name: 1
+    //     });
+    //   } else if (sort === 'name_desc') {
+    //     cursor = cursor.sort({
+    //       name: -1
+    //     });
+    //   }
+
+
+    //   //pageinations
+    //   if(req.query.page){
+    //     const page = req.query.page;
+    //     const perpage = 12;
+    //     const skipItems = (page -1 ) * perpage;
+    //     const total = await profilecollection.countDocuments(query);
+    //     const cursor = profilecollection.find(query).skip(skipItems).limit(perpage);
+
+    //     const lawyers = await cursor.toArray();
+    //     res.send({total, lawyers});
+    //   }
+    //   const result = await cursor.toArray();
+
+    //   res.send(result);
+
+    // });
     app.get('/api/lawyer', async (req, res) => {
 
       const {
         search,
         specialization,
-        sort
+        sort,
+        page
       } = req.query;
 
       const query = {
@@ -92,72 +173,50 @@ async function run() {
       };
 
       // Search
-
       if (search) {
-
         query.$or = [
-          {
-            name: {
-              $regex: search,
-              $options: 'i'
-            }
-          },
-          {
-            bio: {
-              $regex: search,
-              $options: 'i'
-            }
-          }
+          { name: { $regex: search, $options: 'i' } },
+          { bio: { $regex: search, $options: 'i' } }
         ];
       }
 
       // Filter by specialization
-
       if (specialization) {
-
         query.specializations = specialization;
-
-        // alternatively:
-        // query.specializations = { $in: [specialization] };
+        // alternatively: query.specializations = { $in: [specialization] };
       }
 
+      // Single cursor reused for both paths
       let cursor = profilecollection.find(query);
+
       // Sorting
       if (sort === 'fee_asc') {
-        cursor = cursor.sort({
-          fee: 1
-        });
+        cursor = cursor.sort({ fee: 1 });
       } else if (sort === 'fee_desc') {
-        cursor = cursor.sort({
-          fee: -1
-        });
+        cursor = cursor.sort({ fee: -1 });
       } else if (sort === 'name_asc') {
-        cursor = cursor.sort({
-          name: 1
-        });
+        cursor = cursor.sort({ name: 1 });
       } else if (sort === 'name_desc') {
-        cursor = cursor.sort({
-          name: -1
-        });
+        cursor = cursor.sort({ name: -1 });
       }
 
+      // Pagination
+      if (page) {
+        const pageNum = parseInt(page, 10) || 1;
+        const perPage = 12;
+        const skipItems = (pageNum - 1) * perPage;
 
-      //pageinations
-      if(req.query.page){
-        const page = req.query.page;
-        const perpage = 12;
-        const skipItems = (page -1 ) * perpage;
         const total = await profilecollection.countDocuments(query);
-        const cursor = profilecollection.find(query).skip(skipItems).limit(perpage);
+
+        // Reuse the sorted cursor; chain skip + limit
+        cursor = cursor.skip(skipItems).limit(perPage);
         const lawyers = await cursor.toArray();
-        res.send({total, lawyers});
+        return res.send({ total, lawyers });
       }
+
       const result = await cursor.toArray();
-
       res.send(result);
-
     });
-
     app.get('/api/get-legal-profile/:lawyer_id', async (req, res) => {
       const lawyer_id = req.params.lawyer_id;
       const query = { lawyer_id: lawyer_id };
