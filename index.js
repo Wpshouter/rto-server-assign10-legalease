@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const app = express()
 const port = 5000
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const dotenv = require('dotenv');
 dotenv.config();
 app.use(cors());
@@ -35,6 +35,7 @@ async function run() {
     //does actions here
     const database = client.db(process.env.DATABASE_NAME);
     const profilecollection = database.collection('lawyer_sp_profiles');
+    const hiringHistoryCollection = database.collection('hiring_history');
     // app.post('/api/legal_profiles',  async (req, res)  => {
     //   //here we need to check if there is entry having lawyer_id inside the profilecollection
     //    console.log(req.body);
@@ -217,14 +218,75 @@ async function run() {
       const result = await cursor.toArray();
       res.send(result);
     });
-    app.get('/api/get-legal-profile/:lawyer_id', async (req, res) => {
-      const lawyer_id = req.params.lawyer_id;
-      const query = { lawyer_id: lawyer_id };
+      app.get('/api/lawyer/:listingId', async (req, res) => {
+      const listingId = req.params.listingId;
+      const query = { _id: new ObjectId(listingId) };
       const result = await profilecollection.findOne(query);
+      console.log(result);
       //const array = await result.toArray();
       res.send(result);
     })
 
+    app.get('/api/get-legal-profile/:lawyer_id', async (req, res) => {
+      const lawyer_id = req.params.lawyer_id;
+      const query = { lawyer_id: lawyer_id };
+      const result = await profilecollection.findOne(query);
+      //console.log(result);
+      //const array = await result.toArray();
+      res.send(result);
+    })
+
+  app.post('/api/hiring-history', async (req, res) => {
+
+    try {
+
+        const hiringHistory = req.body;
+
+        if (!hiringHistory?.payment_intent_id) {
+            return res.status(400).send({
+                success: false,
+                message: 'payment_intent_id is required'
+            });
+        }
+
+        const existingPayment =
+            await hiringHistoryCollection.findOne({
+                payment_intent_id:
+                    hiringHistory.payment_intent_id
+            });
+
+        if (existingPayment) {
+            return res.send({
+                success: true,
+                message: 'Payment already recorded',
+                inserted: false,
+                data: existingPayment
+            });
+        }
+
+        const result =
+            await hiringHistoryCollection.insertOne(
+                hiringHistory
+            );
+
+        res.send({
+            success: true,
+            inserted: true,
+            insertedId: result.insertedId
+        });
+
+    } catch (error) {
+
+        console.error(error);
+
+        res.status(500).send({
+            success: false,
+            message: error.message
+        });
+
+    }
+
+});
     //veryfytoken of the request middleware
 
 
