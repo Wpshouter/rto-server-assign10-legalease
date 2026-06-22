@@ -36,6 +36,7 @@ async function run() {
     const database = client.db(process.env.DATABASE_NAME);
     const profilecollection = database.collection('lawyer_sp_profiles');
     const hiringHistoryCollection = database.collection('hiring_history');
+    const hiringRequestCollection = database.collection('hiring_request');
     // app.post('/api/legal_profiles',  async (req, res)  => {
     //   //here we need to check if there is entry having lawyer_id inside the profilecollection
     //    console.log(req.body);
@@ -218,7 +219,7 @@ async function run() {
       const result = await cursor.toArray();
       res.send(result);
     });
-      app.get('/api/lawyer/:listingId', async (req, res) => {
+    app.get('/api/lawyer/:listingId', async (req, res) => {
       const listingId = req.params.listingId;
       const query = { _id: new ObjectId(listingId) };
       const result = await profilecollection.findOne(query);
@@ -236,57 +237,151 @@ async function run() {
       res.send(result);
     })
 
-  app.post('/api/hiring-history', async (req, res) => {
+    // app.get('/api/hiring-request/user/:user_id', async (req, res) => {
+    //   const userId = req.params.user_id;
+    //   console.log(userId);
+    //   const query = {requested_by: userId};
+    //     const result = await hiringRequestCollection.find(query).toArray();
 
-    try {
+    //        res.send(result);
+    // })
 
-        const hiringHistory = req.body;
+    app.get('/api/hiring-request/user/:user_id', async (req, res) => {
+      try {
 
-        if (!hiringHistory?.payment_intent_id) {
-            return res.status(400).send({
-                success: false,
-                message: 'payment_intent_id is required'
-            });
+        const userId = req.params.user_id;
+
+        // Get all requests
+        const requests = await hiringRequestCollection
+          .find({ requested_by: userId })
+          .toArray();
+
+        if (!requests.length) {
+          return res.send([]);
         }
 
-        const existingPayment =
-            await hiringHistoryCollection.findOne({
-                payment_intent_id:
-                    hiringHistory.payment_intent_id
-            });
+        // Collect lawyer ids
+        const lawyerIds = requests.map(
+          (item) => item.lawyerId
+        );
 
-        if (existingPayment) {
-            return res.send({
-                success: true,
-                message: 'Payment already recorded',
-                inserted: false,
-                data: existingPayment
-            });
-        }
+        // Get all payment records in one query
+        const histories = await hiringHistoryCollection
+          .find({
+            hired_by: userId,
+            lawyerId: { $in: lawyerIds }
+          })
+          .toArray();
 
-        const result =
-            await hiringHistoryCollection.insertOne(
-                hiringHistory
-            );
+        // Fast lookup map
+        const historyMap = new Map();
 
-        res.send({
-            success: true,
-            inserted: true,
-            insertedId: result.insertedId
+        histories.forEach((history) => {
+          historyMap.set(
+            history.lawyerId,
+            history
+          );
         });
 
-    } catch (error) {
+        // Merge
+        const result = requests.map((request) => ({
+          ...request,
+          payment:
+            historyMap.get(request.lawyerId) || null,
+        }));
+
+        res.send(result);
+
+      } catch (error) {
 
         console.error(error);
 
         res.status(500).send({
-            success: false,
-            message: error.message
+          message: "Something went wrong",
         });
 
-    }
+      }
+    });
 
-});
+
+    app.post('/api/hiring-request', async (req, res) => {
+      const hiringRequest = req.body;
+      const exisitng_same_user_req = await hiringRequestCollection.findOne({
+        lawyerId: hiringRequest.lawyerId,
+        requested_by: hiringRequest.requested_by,
+        status: 'pending'
+      })
+      if (exisitng_same_user_req) {
+        return res.send({
+          success: true,
+          message: 'Your already have a pending request to this lawyer.',
+          inserted: false
+        });
+      }
+      const result =
+        await hiringRequestCollection.insertOne(
+          hiringRequest
+        );
+
+      res.send({
+        success: true,
+        inserted: true,
+        insertedId: result.insertedId
+      });
+
+
+    })
+    app.post('/api/hiring-history', async (req, res) => {
+
+      try {
+
+        const hiringHistory = req.body;
+
+        if (!hiringHistory?.payment_intent_id) {
+          return res.status(400).send({
+            success: false,
+            message: 'payment_intent_id is required'
+          });
+        }
+
+        const existingPayment =
+          await hiringHistoryCollection.findOne({
+            payment_intent_id:
+              hiringHistory.payment_intent_id
+          });
+
+        if (existingPayment) {
+          return res.send({
+            success: true,
+            message: 'Payment already recorded',
+            inserted: false,
+            data: existingPayment
+          });
+        }
+
+        const result =
+          await hiringHistoryCollection.insertOne(
+            hiringHistory
+          );
+
+        res.send({
+          success: true,
+          inserted: true,
+          insertedId: result.insertedId
+        });
+
+      } catch (error) {
+
+        console.error(error);
+
+        res.status(500).send({
+          success: false,
+          message: error.message
+        });
+
+      }
+
+    });
     //veryfytoken of the request middleware
 
 
