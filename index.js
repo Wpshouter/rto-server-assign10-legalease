@@ -37,6 +37,7 @@ async function run() {
     const profilecollection = database.collection('lawyer_sp_profiles');
     const hiringHistoryCollection = database.collection('hiring_history');
     const hiringRequestCollection = database.collection('hiring_request');
+    const userCollection = database.collection('user');
     // app.post('/api/legal_profiles',  async (req, res)  => {
     //   //here we need to check if there is entry having lawyer_id inside the profilecollection
     //    console.log(req.body);
@@ -251,7 +252,6 @@ async function run() {
 
         const userId = req.params.user_id;
 
-        // Get all requests
         const requests = await hiringRequestCollection
           .find({ requested_by: userId })
           .toArray();
@@ -260,12 +260,13 @@ async function run() {
           return res.send([]);
         }
 
-        // Collect lawyer ids
+        // Collect lawyer ids once
         const lawyerIds = requests.map(
           (item) => item.lawyerId
         );
+        console.log("lawyerIds", lawyerIds);
 
-        // Get all payment records in one query
+        // Fetch payment history in one query
         const histories = await hiringHistoryCollection
           .find({
             hired_by: userId,
@@ -273,7 +274,17 @@ async function run() {
           })
           .toArray();
 
-        // Fast lookup map
+        const profileIds = lawyerIds.map(
+          id => new ObjectId(id)
+        );
+
+        const profiles = await profilecollection
+          .find({
+            _id: { $in: profileIds }
+          })
+          .toArray();
+        console.log("profiles found", profiles);
+        // Payment lookup
         const historyMap = new Map();
 
         histories.forEach((history) => {
@@ -283,11 +294,25 @@ async function run() {
           );
         });
 
-        // Merge
+        // Profile lookup
+        const profileMap = new Map();
+
+        profiles.forEach((profile) => {
+          profileMap.set(
+            profile._id.toString(),
+            profile
+          );
+        });
+        console.log("profiles found", profileMap);
+        // Merge everything
         const result = requests.map((request) => ({
           ...request,
+
           payment:
             historyMap.get(request.lawyerId) || null,
+
+          profile:
+            profileMap.get(request.lawyerId) || null,
         }));
 
         res.send(result);
@@ -302,7 +327,131 @@ async function run() {
 
       }
     });
+    app.get('/api/hiring-request/lawyer/:lawyer_id', async (req, res) => {
 
+      const lawyer_id = req.params.lawyer_id;
+
+      const querys = {
+        lawyer_id: lawyer_id
+      };
+
+      const lawyerUserIdProfile =
+        await profilecollection.findOne(querys);
+
+      console.log(lawyerUserIdProfile);
+
+      const query = {
+        lawyerId:
+          lawyerUserIdProfile._id.toString()
+      };
+
+      console.log(
+        'laywer id from /api/hiring-request/lawyer/',
+        lawyer_id
+      );
+
+      const result =
+        await hiringRequestCollection
+          .find(query)
+          .toArray();
+
+      if (!result.length) {
+        return res.send([]);
+      }
+
+      // Get all user ids
+      const userIds = result.map(
+        item => new ObjectId(
+          item.requested_by
+        )
+      );
+
+      // Fetch users in one query
+      const users =
+        await userCollection
+          .find({
+            _id: {
+              $in: userIds
+            }
+          })
+          .toArray();
+
+      // Create lookup map
+      const userMap = new Map();
+
+      users.forEach(user => {
+        userMap.set(
+          user._id.toString(),
+          {
+            _id: user._id.toString(),
+            name: user.name,
+            email: user.email,
+          }
+        );
+      });
+
+      // Attach user object
+      const response = result.map(
+        request => ({
+          ...request,
+          user:
+            userMap.get(
+              request.requested_by
+            ) || null
+        })
+      );
+
+      res.send(response);
+
+    });
+
+
+    app.post( "/api/lawyer/approve-request", async (req, res) => {
+        try {
+          const { requestId, status, } = req.body;
+          if (!requestId) {
+            return res.status(400).send({
+              success: false,
+              message: "Request ID is required",
+            });
+          }
+          const result = await hiringRequestCollection.updateOne(
+              {
+                _id: new ObjectId( requestId
+                ),
+              },
+              {
+                $set: {
+                  status:
+                    status || "approved",
+                  updated_at:
+                    new Date(),
+                },
+              }
+            );
+          if (
+            result.matchedCount === 0
+          ) {
+            return res.status(404).send({
+              success: false,
+              message:
+                "Request not found",
+            });
+          }
+          res.send({
+            success: true,
+            message:
+              "Request approved successfully",
+          });
+        } catch (error) {
+          console.error(error);
+          res.status(500).send({
+            success: false,
+            message:
+              "Something went wrong",
+          });
+        }
+  });
 
     app.post('/api/hiring-request', async (req, res) => {
       const hiringRequest = req.body;
