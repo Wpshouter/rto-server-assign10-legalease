@@ -163,194 +163,472 @@ async function run() {
       res.send(result);
     })
 
-    app.get('/api/hiring-request/user/:user_id', async (req, res) => {
-      try {
+    // app.get('/api/hiring-request/user/:user_id', async (req, res) => {
+    //   try {
 
-        const userId = req.params.user_id;
+    //     const userId = req.params.user_id;
 
-        const requests = await hiringRequestCollection
-          .find({ requested_by: userId })
-          .toArray();
+    //     const requests = await hiringRequestCollection
+    //       .find({ requested_by: userId })
+    //       .toArray();
 
-        if (!requests.length) {
-          return res.send([]);
-        }
+    //     if (!requests.length) {
+    //       return res.send([]);
+    //     }
 
-        // Collect lawyer ids once
-        const lawyerIds = requests.map(
-          (item) => item.lawyerId
-        );
-        console.log("lawyerIds", lawyerIds);
+    //     // Collect lawyer ids once
+    //     const lawyerIds = requests.map(
+    //       (item) => item.lawyerId
+    //     );
+    //     console.log("lawyerIds", lawyerIds);
 
-        // Fetch payment history in one query
-        const histories = await hiringHistoryCollection
-          .find({
-            hired_by: userId,
-            lawyerId: { $in: lawyerIds }
-          })
-          .toArray();
+    //     // Fetch payment history in one query
+    //     const histories = await hiringHistoryCollection
+    //       .find({
+    //         hired_by: userId,
+    //         lawyerId: { $in: lawyerIds }
+    //       })
+    //       .toArray();
 
-        const profileIds = lawyerIds.map(
-          id => new ObjectId(id)
-        );
+    //     const profileIds = lawyerIds.map(
+    //       id => new ObjectId(id)
+    //     );
 
-        const profiles = await profilecollection
-          .find({
-            _id: { $in: profileIds }
-          })
-          .toArray();
-        console.log("profiles found", profiles);
-        // Payment lookup
-        const historyMap = new Map();
+    //     const profiles = await profilecollection
+    //       .find({
+    //         _id: { $in: profileIds }
+    //       })
+    //       .toArray();
+    //     console.log("profiles found", profiles);
+    //     // Payment lookup
+    //     const historyMap = new Map();
 
-        histories.forEach((history) => {
-          historyMap.set(
-            history.lawyerId,
-            history
-          );
-        });
+    //     histories.forEach((history) => {
+    //       historyMap.set(
+    //         history.lawyerId,
+    //         history
+    //       );
+    //     });
 
-        // Profile lookup
-        const profileMap = new Map();
+    //     // Profile lookup
+    //     const profileMap = new Map();
 
-        profiles.forEach((profile) => {
-          profileMap.set(
-            profile._id.toString(),
-            profile
-          );
-        });
-        console.log("profiles found", profileMap);
-        // Merge everything
-        const result = requests.map((request) => ({
-          ...request,
+    //     profiles.forEach((profile) => {
+    //       profileMap.set(
+    //         profile._id.toString(),
+    //         profile
+    //       );
+    //     });
+    //     console.log("profiles found", profileMap);
+    //     // Merge everything
+    //     const result = requests.map((request) => ({
+    //       ...request,
 
-          payment:
-            historyMap.get(request.lawyerId) || null,
+    //       payment:
+    //         historyMap.get(request.lawyerId) || null,
 
-          profile:
-            profileMap.get(request.lawyerId) || null,
-        }));
+    //       profile:
+    //         profileMap.get(request.lawyerId) || null,
+    //     }));
 
-        res.send(result);
+    //     res.send(result);
 
-      } catch (error) {
+    //   } catch (error) {
 
-        console.error(error);
+    //     console.error(error);
 
-        res.status(500).send({
-          message: "Something went wrong",
-        });
+    //     res.status(500).send({
+    //       message: "Something went wrong",
+    //     });
 
-      }
-    });
-    app.get('/api/hiring-request/lawyer/:lawyer_id', async (req, res) => {
+    //   }
+    // });
+app.get('/api/hiring-request/user/:user_id', async (req, res) => {
+    try {
 
-      const lawyer_id = req.params.lawyer_id;
-      const querys = {
-        lawyer_id: lawyer_id
-      };
-
-      const lawyerUserIdProfile =
-        await profilecollection.findOne(querys);
-
-      console.log(lawyerUserIdProfile);
-
-      const query = {
-        lawyerId:
-          lawyerUserIdProfile._id.toString()
-      };
-
-      console.log(
-        'laywer id from /api/hiring-request/lawyer/',
-        lawyer_id
-      );
+      const userId =
+        req.params.user_id;
 
       const result =
-        await hiringRequestCollection
-          .find(query)
-          .toArray();
+        await hiringRequestCollection.aggregate([
 
-      if (!result.length) {
+          {
+            $match: {
+              requested_by: userId
+            }
+          },
+
+          // Join payment/hiring history
+          {
+            $lookup: {
+              from: 'hiring_history',
+
+              let: {
+                requestId: {
+                  $toString: '$_id'
+                }
+              },
+
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $eq: [
+                        '$reqID',
+                        '$$requestId'
+                      ]
+                    }
+                  }
+                }
+              ],
+
+              as: 'payment'
+            }
+          },
+
+          // payment object instead of array
+          {
+            $addFields: {
+              payment: {
+                $ifNull: [
+                  {
+                    $arrayElemAt: [
+                      '$payment',
+                      0
+                    ]
+                  },
+                  null
+                ]
+              }
+            }
+          },
+
+          // Join lawyer profile
+          {
+            $lookup: {
+              from: 'lawyer_sp_profiles',
+
+              let: {
+                profileId: {
+                  $toObjectId:
+                    '$lawyerId'
+                }
+              },
+
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $eq: [
+                        '$_id',
+                        '$$profileId'
+                      ]
+                    }
+                  }
+                }
+              ],
+
+              as: 'profile'
+            }
+          },
+
+          // profile object instead of array
+          {
+            $addFields: {
+              profile: {
+                $ifNull: [
+                  {
+                    $arrayElemAt: [
+                      '$profile',
+                      0
+                    ]
+                  },
+                  null
+                ]
+              }
+            }
+          }
+
+        ]).toArray();
+
+      res.send(result);
+
+    } catch (error) {
+
+      console.error(error);
+
+      res.status(500).send({
+        message:
+          'Something went wrong'
+      });
+
+    }
+  }
+);
+    // app.get('/api/hiring-request/lawyer/:lawyer_id', async (req, res) => {
+
+    //   const lawyer_id = req.params.lawyer_id;
+    //   const querys = {
+    //     lawyer_id: lawyer_id
+    //   };
+
+    //   const lawyerUserIdProfile =
+    //     await profilecollection.findOne(querys);
+
+    //   console.log(lawyerUserIdProfile);
+
+    //   const query = {
+    //     lawyerId:
+    //       lawyerUserIdProfile._id.toString()
+    //   };
+
+    //   console.log(
+    //     'laywer id from /api/hiring-request/lawyer/',
+    //     lawyer_id
+    //   );
+
+    //   const result =
+    //     await hiringRequestCollection
+    //       .find(query)
+    //       .toArray();
+
+    //   if (!result.length) {
+    //     return res.send([]);
+    //   }
+
+    //   // Get all user ids
+    //   const userIds = result.map(
+    //     item => new ObjectId(
+    //       item.requested_by
+    //     )
+    //   );
+
+    //   // Fetch users in one query
+    //   const users =
+    //     await userCollection
+    //       .find({
+    //         _id: {
+    //           $in: userIds
+    //         }
+    //       })
+    //       .toArray();
+
+    //   // Create lookup map
+    //   const userMap = new Map();
+
+    //   users.forEach(user => {
+    //     userMap.set(
+    //       user._id.toString(),
+    //       {
+    //         _id: user._id.toString(),
+    //         name: user.name,
+    //         email: user.email,
+    //       }
+    //     );
+    //   });
+    //   // Get all request ids
+    //   const requestIds = result.map(item =>
+    //     item._id.toString()
+    //   );
+
+    //   // Fetch hiring history records
+    //   const histories =
+    //     await hiringHistoryCollection
+    //       .find({
+    //         reqID: {
+    //           $in: requestIds
+    //         }
+    //       })
+    //       .toArray();
+
+    //   // Create lookup map
+    //   const historyMap = new Map();
+
+    //   histories.forEach(history => {
+    //     historyMap.set(
+    //       history.reqID,
+    //       history
+    //     );
+    //   });
+    //   // Attach user object
+    //   const response = result.map(
+    //     request => ({
+    //       ...request,
+    //       user:
+    //         userMap.get(
+    //           request.requested_by
+    //         ) || null,
+
+    //       hiringHistory:
+    //         historyMap.get(
+    //           request._id.toString()
+    //         ) || null,
+
+    //       payment: !!historyMap.get(
+    //         request._id.toString()
+    //       )
+    //     })
+    //   );
+
+    //   res.send(response);
+
+    // });
+
+    app.get( '/api/hiring-request/lawyer/:lawyer_id', async (req, res) => {
+
+    try {
+
+      const lawyer_id =
+        req.params.lawyer_id;
+
+      const lawyerProfile =
+        await profilecollection.findOne({
+          lawyer_id
+        });
+
+      if (!lawyerProfile) {
         return res.send([]);
       }
 
-      // Get all user ids
-      const userIds = result.map(
-        item => new ObjectId(
-          item.requested_by
-        )
-      );
+      const result =
+        await hiringRequestCollection.aggregate([
 
-      // Fetch users in one query
-      const users =
-        await userCollection
-          .find({
-            _id: {
-              $in: userIds
-            }
-          })
-          .toArray();
-
-      // Create lookup map
-      const userMap = new Map();
-
-      users.forEach(user => {
-        userMap.set(
-          user._id.toString(),
           {
-            _id: user._id.toString(),
-            name: user.name,
-            email: user.email,
-          }
-        );
-      });
-      // Get all request ids
-      const requestIds = result.map(item =>
-        item._id.toString()
-      );
-
-      // Fetch hiring history records
-      const histories =
-        await hiringHistoryCollection
-          .find({
-            reqID: {
-              $in: requestIds
+            $match: {
+              lawyerId:
+                lawyerProfile._id.toString()
             }
-          })
-          .toArray();
+          },
 
-      // Create lookup map
-      const historyMap = new Map();
+          // Join user
+          {
+            $lookup: {
+              from: 'user',
 
-      histories.forEach(history => {
-        historyMap.set(
-          history.reqID,
-          history
-        );
+              let: {
+                userId: {
+                  $toObjectId:
+                    '$requested_by'
+                }
+              },
+
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $eq: [
+                        '$_id',
+                        '$$userId'
+                      ]
+                    }
+                  }
+                },
+
+                {
+                  $project: {
+                    _id: {
+                      $toString: '$_id'
+                    },
+                    name: 1,
+                    email: 1
+                  }
+                }
+              ],
+
+              as: 'user'
+            }
+          },
+
+          {
+            $addFields: {
+              user: {
+                $ifNull: [
+                  {
+                    $arrayElemAt: [
+                      '$user',
+                      0
+                    ]
+                  },
+                  null
+                ]
+              }
+            }
+          },
+
+          // Join hiring history
+          {
+            $lookup: {
+              from: 'hiring_history',
+
+              let: {
+                requestId: {
+                  $toString: '$_id'
+                }
+              },
+
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $eq: [
+                        '$reqID',
+                        '$$requestId'
+                      ]
+                    }
+                  }
+                }
+              ],
+
+              as: 'hiringHistory'
+            }
+          },
+
+          {
+            $addFields: {
+
+              hiringHistory: {
+                $ifNull: [
+                  {
+                    $arrayElemAt: [
+                      '$hiringHistory',
+                      0
+                    ]
+                  },
+                  null
+                ]
+              },
+
+              payment: {
+                $gt: [
+                  {
+                    $size:
+                      '$hiringHistory'
+                  },
+                  0
+                ]
+              }
+
+            }
+          }
+
+        ]).toArray();
+
+      res.send(result);
+
+    } catch (error) {
+
+      console.error(error);
+
+      res.status(500).send({
+        message:
+          'Something went wrong'
       });
-      // Attach user object
-      const response = result.map(
-        request => ({
-          ...request,
-          user:
-            userMap.get(
-              request.requested_by
-            ) || null,
 
-          hiringHistory:
-            historyMap.get(
-              request._id.toString()
-            ) || null,
-
-          payment: !!historyMap.get(
-            request._id.toString()
-          )
-        })
-      );
-
-      res.send(response);
+    }
 
     });
+
+
     app.post("/api/lawyer/approve-request", async (req, res) => {
       try {
         const { requestId, status, } = req.body;
@@ -473,95 +751,270 @@ async function run() {
     });
 
     //get payments
-    app.get( '/api/payments/lawyer/:lawyerId', async (req, res) => {
-        try {
-          const { lawyerId } = req.params;
-          const payments =
-            await hiringHistoryCollection
-              .find({ lawyerId })
-              .sort({ created_at: -1 })
-              .toArray();
+    // app.get( '/api/payments/lawyer/:lawyerId', async (req, res) => {
+    //     try {
+    //       const { lawyerId } = req.params;
+    //       const payments =
+    //         await hiringHistoryCollection
+    //           .find({ lawyerId })
+    //           .sort({ created_at: -1 })
+    //           .toArray();
 
-          if (!payments.length) {
-            return res.send([]);
-          }
-          const reqIds = payments.map(
-            item => new ObjectId(item.reqID)
-          );
-          const requests =
-            await hiringRequestCollection
-              .find({
-                _id: { $in: reqIds }
-              }).toArray();
-          const requestMap = new Map();
-          requests.forEach(request => {
-            requestMap.set(
-              request._id.toString(),
-              request
-            );
-          });
+    //       if (!payments.length) {
+    //         return res.send([]);
+    //       }
+    //       const reqIds = payments.map(
+    //         item => new ObjectId(item.reqID)
+    //       );
+    //       const requests =
+    //         await hiringRequestCollection
+    //           .find({
+    //             _id: { $in: reqIds }
+    //           }).toArray();
+    //       const requestMap = new Map();
+    //       requests.forEach(request => {
+    //         requestMap.set(
+    //           request._id.toString(),
+    //           request
+    //         );
+    //       });
          
-          // Users
-      const userIds = payments.map(
-        item =>
-          new ObjectId(
-            item.hired_by
-          )
-      );
+    //       // Users
+    //   const userIds = payments.map(
+    //     item =>
+    //       new ObjectId(
+    //         item.hired_by
+    //       )
+    //   );
 
-      const users =
-        await userCollection
-          .find({
-            _id: {
-              $in: userIds
-            }
-          })
-          .toArray();
+    //   const users =
+    //     await userCollection
+    //       .find({
+    //         _id: {
+    //           $in: userIds
+    //         }
+    //       })
+    //       .toArray();
 
-      const userMap = new Map();
+    //   const userMap = new Map();
 
-      users.forEach(user => {
-        userMap.set(
-          user._id.toString(),
+    //   users.forEach(user => {
+    //     userMap.set(
+    //       user._id.toString(),
+    //       {
+    //         _id:
+    //           user._id.toString(),
+    //         name: user.name,
+    //         email: user.email,
+    //       }
+    //     );
+    //   });
+
+    //   // Final Response
+    //   const response = payments.map(
+    //     payment => ({
+    //       ...payment,
+
+    //       request:
+    //         requestMap.get(
+    //           payment.reqID
+    //         ) || null,
+
+    //       user:
+    //         userMap.get(
+    //           payment.hired_by
+    //         ) || null,
+    //     })
+    //   );
+
+    //   res.send(response);
+
+    //     } catch (error) {
+    //       console.error(error);
+    //       res.status(500).send({
+    //         message: 'Server Error'
+    //       });
+    //     }
+    //   }
+    // );
+
+    app.get( '/api/payments/lawyer/:lawyerId', async (req, res) => {
+    try {
+      const { lawyerId } =
+        req.params;
+      const result =
+        await hiringHistoryCollection.aggregate([
           {
-            _id:
-              user._id.toString(),
-            name: user.name,
-            email: user.email,
+            $match: {
+              lawyerId
+            }
+          },
+
+          {
+            $sort: {
+              created_at: -1
+            }
+          },
+
+          // Request
+          {
+            $lookup: {
+
+              from:
+                'hiring_request',
+
+              let: {
+                requestId: {
+                  $toObjectId:
+                    '$reqID'
+                }
+              },
+
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $eq: [
+                        '$_id',
+                        '$$requestId'
+                      ]
+                    }
+                  }
+                }
+              ],
+
+              as: 'request'
+
+            }
+          },
+
+          {
+            $addFields: {
+              request: {
+                $ifNull: [
+                  {
+                    $arrayElemAt: [
+                      '$request',
+                      0
+                    ]
+                  },
+                  null
+                ]
+              }
+            }
+          },
+
+          // User
+          {
+            $lookup: {
+
+              from: 'user',
+
+              let: {
+                userId: {
+                  $toObjectId:
+                    '$hired_by'
+                }
+              },
+
+              pipeline: [
+
+                {
+                  $match: {
+                    $expr: {
+                      $eq: [
+                        '$_id',
+                        '$$userId'
+                      ]
+                    }
+                  }
+                },
+
+                {
+                  $project: {
+                    _id: {
+                      $toString:
+                        '$_id'
+                    },
+                    name: 1,
+                    email: 1
+                  }
+                }
+
+              ],
+
+              as: 'user'
+
+            }
+          },
+
+          {
+            $addFields: {
+              user: {
+                $ifNull: [
+                  {
+                    $arrayElemAt: [
+                      '$user',
+                      0
+                    ]
+                  },
+                  null
+                ]
+              }
+            }
           }
-        );
+
+        ]).toArray();
+
+      res.send(result);
+
+    } catch (error) {
+
+      console.error(error);
+
+      res.status(500).send({
+        message:
+          'Server Error'
       });
 
-      // Final Response
-      const response = payments.map(
-        payment => ({
-          ...payment,
+    }
 
-          request:
-            requestMap.get(
-              payment.reqID
-            ) || null,
+  });
 
-          user:
-            userMap.get(
-              payment.hired_by
-            ) || null,
-        })
-      );
-
-      res.send(response);
-      
-        } catch (error) {
-          console.error(error);
-          res.status(500).send({
-            message: 'Server Error'
-          });
-        }
-      }
-    );
     //veryfytoken of the request middleware
 
+    //can comment
+    app.get(
+  '/api/can-comment/:lawyerId/:userId',
+  async (req, res) => {
+    try {
 
+      const {
+        lawyerId,
+        userId,
+      } = req.params;
+
+      const hiring =
+        await hiringHistoryCollection.findOne({
+          lawyerId,
+          hired_by: userId,
+        });
+
+      res.send({
+        canComment: !!hiring,
+      });
+
+    } catch (error) {
+
+      console.error(error);
+
+      res.status(500).send({
+        canComment: false,
+      });
+
+    }
+  }
+);
 
 
     // Send a ping to confirm a successful connection
