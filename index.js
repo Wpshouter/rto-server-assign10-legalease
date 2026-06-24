@@ -13,7 +13,7 @@ app.get('/', (req, res) => {
 })
 
 app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`)
+  //console.log(`Example app listening on port ${port}`)
 })
 
 
@@ -27,6 +27,10 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   }
 });
+const myLogger = function (req, res, next) {
+  console.log('LOGGED', req.headers);
+  next();
+};
 
 async function run() {
   try {
@@ -55,7 +59,7 @@ async function run() {
           upsert: true
         }
       );
-      //console.log(result);
+      ////console.log(result);
       res.send(result);
 
     });
@@ -150,7 +154,7 @@ async function run() {
       const listingId = req.params.listingId;
       const query = { _id: new ObjectId(listingId) };
       const result = await profilecollection.findOne(query);
-      console.log(result);
+      //console.log(result);
       //const array = await result.toArray();
       res.send(result);
     })
@@ -159,7 +163,7 @@ async function run() {
       const lawyer_id = req.params.lawyer_id;
       const query = { lawyer_id: lawyer_id };
       const result = await profilecollection.findOne(query);
-      //console.log(result);
+      ////console.log(result);
       //const array = await result.toArray();
       res.send(result);
     })
@@ -181,7 +185,7 @@ async function run() {
     //     const lawyerIds = requests.map(
     //       (item) => item.lawyerId
     //     );
-    //     console.log("lawyerIds", lawyerIds);
+    //     //console.log("lawyerIds", lawyerIds);
 
     //     // Fetch payment history in one query
     //     const histories = await hiringHistoryCollection
@@ -200,7 +204,7 @@ async function run() {
     //         _id: { $in: profileIds }
     //       })
     //       .toArray();
-    //     console.log("profiles found", profiles);
+    //     //console.log("profiles found", profiles);
     //     // Payment lookup
     //     const historyMap = new Map();
 
@@ -220,7 +224,7 @@ async function run() {
     //         profile
     //       );
     //     });
-    //     console.log("profiles found", profileMap);
+    //     //console.log("profiles found", profileMap);
     //     // Merge everything
     //     const result = requests.map((request) => ({
     //       ...request,
@@ -376,14 +380,14 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
     //   const lawyerUserIdProfile =
     //     await profilecollection.findOne(querys);
 
-    //   console.log(lawyerUserIdProfile);
+    //   //console.log(lawyerUserIdProfile);
 
     //   const query = {
     //     lawyerId:
     //       lawyerUserIdProfile._id.toString()
     //   };
 
-    //   console.log(
+    //   //console.log(
     //     'laywer id from /api/hiring-request/lawyer/',
     //     lawyer_id
     //   );
@@ -1130,13 +1134,87 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
 
 
     //get comment
+    app.get('/api/comments/lawyer/:lawyerId', async (req, res) => {
+      try {
+        const { lawyerId } = req.params;
+        const comments = await commentCollection.aggregate([
+            {
+              $match: { 
+                lawyerId
+              }
+            },
+            {
+              $sort: {
+                createdAt: -1
+              }
+            },
+            {
+              $lookup: {
+                from: 'user',
+                let: {
+                  userObjectId: {
+                    $toObjectId:
+                      '$userId'
+                  }
+                },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $eq: [
+                          '$_id',
+                          '$$userObjectId'
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    $project: {
+                      _id: {
+                        $toString: '$_id'
+                      },
+                      name: 1,
+                      email: 1
+                    }
+                  }
+                ],
+                as: 'user'
+              }
+            },
+            {
+              $addFields: {
+                user: {
+                  $ifNull: [
+                    {
+                      $arrayElemAt: [
+                        '$user',
+                        0
+                      ]
+                    },
+                    null
+                  ]
+                }
+              }
+            }
+          ]).toArray();
+        res.send(comments);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({
+          message:
+            'Failed to fetch comments'
+        });
+      }
+    });
+
+    //get comment users
     app.get(
-  '/api/comments/lawyer/:lawyerId',
+  '/api/comments/user/:userId',
   async (req, res) => {
 
     try {
 
-      const { lawyerId } =
+      const { userId } =
         req.params;
 
       const comments =
@@ -1144,7 +1222,7 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
 
           {
             $match: {
-              lawyerId
+              userId
             }
           },
 
@@ -1157,22 +1235,23 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
           {
             $lookup: {
 
-              from: 'user',
+              from: 'lawyer_sp_profiles',
 
               let: {
-                userObjectId: {
+                lawyerProfileId: {
                   $toObjectId:
-                    '$userId'
+                    '$lawyerId'
                 }
               },
 
               pipeline: [
+
                 {
                   $match: {
                     $expr: {
                       $eq: [
                         '$_id',
-                        '$$userObjectId'
+                        '$$lawyerProfileId'
                       ]
                     }
                   }
@@ -1180,27 +1259,28 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
 
                 {
                   $project: {
-                    _id: {
-                      $toString: '$_id'
-                    },
                     name: 1,
-                    email: 1
+                    imageUrl: 1,
+                    fee: 1,
+                    specializations: 1,
+                    status: 1
                   }
                 }
+
               ],
 
-              as: 'user'
+              as: 'lawyer'
 
             }
           },
 
           {
             $addFields: {
-              user: {
+              lawyer: {
                 $ifNull: [
                   {
                     $arrayElemAt: [
-                      '$user',
+                      '$lawyer',
                       0
                     ]
                   },
@@ -1226,12 +1306,362 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
     }
 
   }
+    );
+    app.delete(
+  '/api/comment/:commentId',
+  async (req, res) => {
+
+    try {
+
+      const { commentId } =
+        req.params;
+
+      const { userId } =
+        req.body;
+
+      const comment =
+        await commentCollection.findOne({
+          _id: new ObjectId(
+            commentId
+          )
+        });
+
+      if (!comment) {
+        return res.status(404).send({
+          success: false,
+          message:
+            'Comment not found'
+        });
+      }
+
+      if (
+        comment.userId !== userId
+      ) {
+        return res.status(403).send({
+          success: false,
+          message:
+            'Not authorized'
+        });
+      }
+
+      await commentCollection.deleteOne({
+        _id: new ObjectId(
+          commentId
+        )
+      });
+
+      res.send({
+        success: true,
+        message:
+          'Comment deleted'
+      });
+
+    } catch (error) {
+
+      console.error(error);
+
+      res.status(500).send({
+        success: false,
+        message:
+          'Server Error'
+      });
+
+    }
+
+  }
+    );
+    app.patch( '/api/comment/:commentId', myLogger, async (req, res) => {
+    try {
+      const { commentId } =
+        req.params;
+      const {
+        userId,
+        comment
+      } = req.body;
+      if (
+        !comment ||
+        comment.trim().length < 10
+      ) {
+        return res.status(400).send({
+          success: false,
+          message:
+            'Comment must be at least 10 characters'
+        });
+      }
+
+      const existing =
+        await commentCollection.findOne({
+          _id: new ObjectId(
+            commentId
+          )
+        });
+
+      if (!existing) {
+        return res.status(404).send({
+          success: false,
+          message:
+            'Comment not found'
+        });
+      }
+
+      if (
+        existing.userId !== userId
+      ) {
+        return res.status(403).send({
+          success: false,
+          message:
+            'Not authorized'
+        });
+      }
+
+      await commentCollection.updateOne(
+        {
+          _id: new ObjectId(
+            commentId
+          )
+        },
+        {
+          $set: {
+            comment:
+              comment.trim(),
+            updatedAt:
+              new Date().toISOString()
+          }
+        }
+      );
+
+      res.send({
+        success: true,
+        message:
+          'Comment updated'
+      });
+
+    } catch (error) {
+
+      console.error(error);
+
+      res.status(500).send({
+        success: false,
+        message:
+          'Server Error'
+      });
+
+    }
+
+  }
 );
 
 
+app.get(
+  '/api/admin/analytics',
+  async (req, res) => {
+
+    try {
+
+      const [
+        users,
+        lawyers,
+        hires,
+        payments,
+        comments
+      ] = await Promise.all([
+
+        userCollection.countDocuments(),
+
+        profilecollection.countDocuments(),
+
+        hiringRequestCollection.countDocuments(),
+
+        hiringHistoryCollection.find().toArray(),
+
+        commentCollection.countDocuments()
+
+      ]);
+
+      const totalRevenue =
+        payments.reduce(
+          (sum, item) =>
+            sum +
+            Number(item.fee || 0),
+          0
+        );
+
+      res.send({
+        totalUsers: users,
+        totalLawyers: lawyers,
+        totalHires: hires,
+        totalPayments:
+          payments.length,
+        totalRevenue,
+        totalComments:
+          comments,
+      });
+
+    } catch (error) {
+
+      console.error(error);
+
+      res.status(500).send({
+        message:
+          'Analytics error'
+      });
+
+    }
+
+  }
+);
+
+
+app.get(
+  '/api/admin/transactions',
+  async (req, res) => {
+
+    try {
+
+      const transactions =
+        await hiringHistoryCollection
+          .aggregate([
+
+            {
+              $lookup: {
+                from: 'user',
+                let: {
+                  userId:
+                    '$hired_by'
+                },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $eq: [
+                          '$_id',
+                          {
+                            $toObjectId:
+                              '$$userId'
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    $project: {
+                      name: 1,
+                      email: 1,
+                    }
+                  }
+                ],
+                as: 'user'
+              }
+            },
+
+            {
+              $lookup: {
+                from: 'lawyer_sp_profiles',
+                let: {
+                  lawyerId:
+                    '$lawyerId'
+                },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $eq: [
+                          {
+                            $toString:
+                              '$_id'
+                          },
+                          '$$lawyerId'
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    $project: {
+                      name: 1,
+                      imageUrl: 1,
+                      specializations: 1,
+                      status: 1,
+                    }
+                  }
+                ],
+                as: 'lawyer'
+              }
+            },
+
+            {
+              $unwind: {
+                path: '$user',
+                preserveNullAndEmptyArrays:
+                  true
+              }
+            },
+
+            {
+              $unwind: {
+                path: '$lawyer',
+                preserveNullAndEmptyArrays:
+                  true
+              }
+            },
+
+            {
+              $sort: {
+                created_at: -1
+              }
+            }
+
+          ])
+          .toArray();
+
+      res.send(
+        transactions
+      );
+
+    } catch (error) {
+
+      console.error(error);
+
+      res.status(500).send({
+        message:
+          'Server Error'
+      });
+
+    }
+
+  }
+);
+
+app.get(
+  '/api/admin/users',
+  async (req, res) => {
+
+    try {
+
+      const users =
+        await userCollection
+          .find({})
+          .sort({
+            createdAt: -1
+          })
+          .toArray();
+
+      res.send(users);
+
+    } catch (error) {
+
+      res.status(500).send({
+        message:
+          'Server Error'
+      });
+
+    }
+
+  }
+);
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    //console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
     //await client.close();
