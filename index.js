@@ -38,6 +38,7 @@ async function run() {
     const hiringHistoryCollection = database.collection('hiring_history');
     const hiringRequestCollection = database.collection('hiring_request');
     const userCollection = database.collection('user');
+    const commentCollection = database.collection('comments');
 
     app.post('/api/legal_profiles', async (req, res) => {
 
@@ -979,14 +980,12 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
 
     }
 
-  });
+    });
 
     //veryfytoken of the request middleware
 
     //can comment
-    app.get(
-  '/api/can-comment/:lawyerId/:userId',
-  async (req, res) => {
+    app.get('/api/can-comment/:lawyerId/:userId', async (req, res) => {
     try {
 
       const {
@@ -1002,6 +1001,8 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
 
       res.send({
         canComment: !!hiring,
+        paymentDataId:hiring._id.toString(),
+        reqID: hiring.reqID
       });
 
     } catch (error) {
@@ -1013,6 +1014,217 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
       });
 
     }
+    });
+
+
+    //
+    app.post( '/api/comment', async (req, res) => {
+
+    try {
+
+      const {
+        lawyerId,
+        userId,
+        comment,
+        reqId,
+        paymentDataId,
+        createdAt,
+      } = req.body;
+
+      if (!comment?.trim()) {
+        return res.status(400).send({
+          success: false,
+          message: 'Comment is required',
+        });
+      }
+
+      // Verify hiring history exists
+      const hiring =
+        await hiringHistoryCollection.findOne({
+
+          _id: new ObjectId(
+            paymentDataId
+          ),
+
+          lawyerId,
+
+          hired_by: userId,
+
+          reqID: reqId,
+
+        });
+
+      if (!hiring) {
+
+        return res.status(403).send({
+          success: false,
+          message:
+            'You are not allowed to review this lawyer',
+        });
+
+      }
+
+      // Prevent duplicate review
+      const existingReview =
+        await commentCollection.findOne({
+
+          lawyerId,
+
+          userId,
+
+          paymentDataId,
+
+        });
+
+      if (existingReview) {
+
+        return res.status(400).send({
+          success: false,
+          message:
+            'You already commented. You need to hire again to comment.',
+        });
+
+      }
+
+      const review = {
+
+        lawyerId,
+        userId,
+        comment: comment.trim(),
+
+        reqId,
+        paymentDataId,
+
+        createdAt:
+          createdAt ||
+          new Date().toISOString(),
+
+      };
+
+      const result =
+        await commentCollection.insertOne(
+          review
+        );
+
+      res.send({
+        success: true,
+        insertedId:
+          result.insertedId,
+        message:
+          'Review submitted successfully',
+      });
+
+    } catch (error) {
+
+      console.error(error);
+
+      res.status(500).send({
+        success: false,
+        message: 'Server Error',
+      });
+
+    }
+
+  }
+    );
+
+
+    //get comment
+    app.get(
+  '/api/comments/lawyer/:lawyerId',
+  async (req, res) => {
+
+    try {
+
+      const { lawyerId } =
+        req.params;
+
+      const comments =
+        await commentCollection.aggregate([
+
+          {
+            $match: {
+              lawyerId
+            }
+          },
+
+          {
+            $sort: {
+              createdAt: -1
+            }
+          },
+
+          {
+            $lookup: {
+
+              from: 'user',
+
+              let: {
+                userObjectId: {
+                  $toObjectId:
+                    '$userId'
+                }
+              },
+
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $eq: [
+                        '$_id',
+                        '$$userObjectId'
+                      ]
+                    }
+                  }
+                },
+
+                {
+                  $project: {
+                    _id: {
+                      $toString: '$_id'
+                    },
+                    name: 1,
+                    email: 1
+                  }
+                }
+              ],
+
+              as: 'user'
+
+            }
+          },
+
+          {
+            $addFields: {
+              user: {
+                $ifNull: [
+                  {
+                    $arrayElemAt: [
+                      '$user',
+                      0
+                    ]
+                  },
+                  null
+                ]
+              }
+            }
+          }
+
+        ]).toArray();
+
+      res.send(comments);
+
+    } catch (error) {
+
+      console.error(error);
+
+      res.status(500).send({
+        message:
+          'Failed to fetch comments'
+      });
+
+    }
+
   }
 );
 
