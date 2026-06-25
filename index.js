@@ -1628,7 +1628,7 @@ app.post(
   async (req, res) => {
 
     const { role } = req.body;
-
+    console.log(role);
     if (
       role !== "client" &&
       role !== "lawyer"
@@ -1637,10 +1637,10 @@ app.post(
         message: "Invalid role"
       });
     }
-
-    await userCollection.updateOne(
+    console.log(req.user);
+    const response = await userCollection.updateOne(
       {
-        _id: new ObjectId(req.user.id)
+        _id: req.user._id
       },
       {
         $set: { role }
@@ -1648,7 +1648,8 @@ app.post(
     );
 
     res.send({
-      success: true
+      success: true,
+      response
     });
 
   }
