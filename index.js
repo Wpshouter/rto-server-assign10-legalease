@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get('/', (req, res) => {
-  res.send('Hello World!')
+  res.send('Hello World! server running')
 })
 
 app.listen(port, () => {
@@ -77,7 +77,7 @@ const verifyLawyer = async(req,res,next) => {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    //await client.connect();
     //does actions here
     const database = client.db(process.env.DATABASE_NAME);
     const profilecollection = database.collection('lawyer_sp_profiles');
