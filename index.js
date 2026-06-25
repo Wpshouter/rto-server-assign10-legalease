@@ -73,11 +73,11 @@ const verifyLawyer = async(req,res,next) => {
   }
   next();
 }
-client.connect(() => {
-  console.log('connecting to mongodb');
-}).catch(console.dir);
-// async function run() {
-//   try {
+// client.connect(() => {
+//   console.log('connecting to mongodb');
+// }).catch(console.dir);
+async function run() {
+  try {
     // Connect the client to the server	(optional starting in v4.7)
     //await client.connect();
     //does actions here
@@ -194,6 +194,7 @@ client.connect(() => {
       const result = await cursor.toArray();
       res.send(result);
     });
+    ///api/lawyer/6a365bc060298275cc165ca9
     app.get('/api/lawyer/:listingId', async (req, res) => {
       const listingId = req.params.listingId;
       const query = { _id: new ObjectId(listingId) };
@@ -1626,13 +1627,13 @@ app.post(
 
   }
 );
-module.exports = app;
+
 //     // Send a ping to confirm a successful connection
 //     await client.db("admin").command({ ping: 1 });
 //     //console.log("Pinged your deployment. You successfully connected to MongoDB!");
-//   } finally {
-//     // Ensures that the client will close when you finish/error
-//     //await client.close();
-//   }
-// }
-// run().catch(console.dir);
+  } finally {
+    // Ensures that the client will close when you finish/error
+    //await client.close();
+  }
+}
+run().catch(console.dir);
