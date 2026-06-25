@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const app = express()
 const port = 5000
+const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const dotenv = require('dotenv');
 dotenv.config();
@@ -31,6 +32,47 @@ const myLogger = function (req, res, next) {
   console.log('LOGGED', req.headers);
   next();
 };
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.NEXT_PUBLIC_FROTNEND_URL}/api/auth/jwks`),
+);
+const verifyToken = async (req, res, next) => {
+  const authHeaderval = req.headers?.authorization;
+  if(!authHeaderval){
+    return res.status(401).send({message: 'unauthorized access'})
+  }
+  const token = authHeaderval.split(" ")[1];
+  if(!token){
+    return res.status(401).send({message: 'unauthorized access'})
+  }
+    try {
+    const { payload } = await jwtVerify(token, JWKS);
+   
+    req.user = payload;
+    next();
+  } catch (error) {
+    return res.status(401).send({message: 'unauthorized access'})
+  }
+  //next();
+}
+const verifyAdmin = async(req,res,next) => {
+  if(req.user?.role !== 'admin'){
+    return res.status(403).send({message : 'forbidden access'})
+  }
+  next();
+}
+const verifyClient = async(req,res,next) => {
+  console.log('______________YOOOHOOO_______________________');
+  if(req.user?.role !== 'client'){
+    return res.status(403).send({message : 'forbidden access'})
+  }
+  next();
+}
+const verifyLawyer = async(req,res,next) => {
+  if(req.user?.role !== 'lawyer'){
+    return res.status(403).send({message : 'forbidden access'})
+  }
+  next();
+}
 
 async function run() {
   try {
@@ -44,7 +86,7 @@ async function run() {
     const userCollection = database.collection('user');
     const commentCollection = database.collection('comments');
 
-    app.post('/api/legal_profiles', async (req, res) => {
+    app.post('/api/legal_profiles', verifyToken, verifyLawyer, async (req, res) => {
 
       const profile = req.body;
 
@@ -165,7 +207,7 @@ async function run() {
       const result = await profilecollection.findOne(query);
       ////console.log(result);
       //const array = await result.toArray();
-      res.send(result);
+      res.send(result || []);
     })
 
     // app.get('/api/hiring-request/user/:user_id', async (req, res) => {
@@ -248,7 +290,7 @@ async function run() {
 
     //   }
     // });
-app.get('/api/hiring-request/user/:user_id', async (req, res) => {
+app.get('/api/hiring-request/user/:user_id', verifyToken, verifyClient,  async (req, res) => {
     try {
 
       const userId =
@@ -479,7 +521,7 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
 
     // });
 
-    app.get( '/api/hiring-request/lawyer/:lawyer_id', async (req, res) => {
+    app.get( '/api/hiring-request/lawyer/:lawyer_id', verifyToken, verifyLawyer, async (req, res) => {
 
     try {
 
@@ -634,7 +676,7 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
     });
 
 
-    app.post("/api/lawyer/approve-request", async (req, res) => {
+    app.post("/api/lawyer/approve-request", verifyToken,  verifyLawyer, async (req, res) => {
       try {
         const { requestId, status, } = req.body;
         if (!requestId) {
@@ -680,7 +722,7 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
         });
       }
     });
-    app.post('/api/hiring-request', async (req, res) => {
+    app.post('/api/hiring-request', verifyToken, async (req, res) => {
       const hiringRequest = req.body;
       const exisitng_same_user_req = await hiringRequestCollection.findOne({
         lawyerId: hiringRequest.lawyerId,
@@ -707,7 +749,7 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
 
 
     })
-    app.post('/api/hiring-history', async (req, res) => {
+    app.post('/api/hiring-history', verifyToken, async (req, res) => {
       try {
         const hiringHistory = req.body;
         if (!hiringHistory?.payment_intent_id) {
@@ -755,95 +797,7 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
 
     });
 
-    //get payments
-    // app.get( '/api/payments/lawyer/:lawyerId', async (req, res) => {
-    //     try {
-    //       const { lawyerId } = req.params;
-    //       const payments =
-    //         await hiringHistoryCollection
-    //           .find({ lawyerId })
-    //           .sort({ created_at: -1 })
-    //           .toArray();
-
-    //       if (!payments.length) {
-    //         return res.send([]);
-    //       }
-    //       const reqIds = payments.map(
-    //         item => new ObjectId(item.reqID)
-    //       );
-    //       const requests =
-    //         await hiringRequestCollection
-    //           .find({
-    //             _id: { $in: reqIds }
-    //           }).toArray();
-    //       const requestMap = new Map();
-    //       requests.forEach(request => {
-    //         requestMap.set(
-    //           request._id.toString(),
-    //           request
-    //         );
-    //       });
-         
-    //       // Users
-    //   const userIds = payments.map(
-    //     item =>
-    //       new ObjectId(
-    //         item.hired_by
-    //       )
-    //   );
-
-    //   const users =
-    //     await userCollection
-    //       .find({
-    //         _id: {
-    //           $in: userIds
-    //         }
-    //       })
-    //       .toArray();
-
-    //   const userMap = new Map();
-
-    //   users.forEach(user => {
-    //     userMap.set(
-    //       user._id.toString(),
-    //       {
-    //         _id:
-    //           user._id.toString(),
-    //         name: user.name,
-    //         email: user.email,
-    //       }
-    //     );
-    //   });
-
-    //   // Final Response
-    //   const response = payments.map(
-    //     payment => ({
-    //       ...payment,
-
-    //       request:
-    //         requestMap.get(
-    //           payment.reqID
-    //         ) || null,
-
-    //       user:
-    //         userMap.get(
-    //           payment.hired_by
-    //         ) || null,
-    //     })
-    //   );
-
-    //   res.send(response);
-
-    //     } catch (error) {
-    //       console.error(error);
-    //       res.status(500).send({
-    //         message: 'Server Error'
-    //       });
-    //     }
-    //   }
-    // );
-
-    app.get( '/api/payments/lawyer/:lawyerId', async (req, res) => {
+    app.get( '/api/payments/lawyer/:lawyerId', verifyToken, verifyLawyer, async (req, res) => {
     try {
       const { lawyerId } =
         req.params;
@@ -1022,7 +976,7 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
 
 
     //
-    app.post( '/api/comment', async (req, res) => {
+    app.post( '/api/comment', verifyToken,  verifyClient, async (req, res) => {
 
     try {
 
@@ -1134,7 +1088,7 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
 
 
     //get comment
-    app.get('/api/comments/lawyer/:lawyerId', async (req, res) => {
+    app.get('/api/comments/lawyer/:lawyerId',  async (req, res) => {
       try {
         const { lawyerId } = req.params;
         const comments = await commentCollection.aggregate([
@@ -1208,10 +1162,7 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
     });
 
     //get comment users
-    app.get(
-  '/api/comments/user/:userId',
-  async (req, res) => {
-
+    app.get( '/api/comments/user/:userId', verifyToken, verifyClient, async (req, res) => {
     try {
 
       const { userId } =
@@ -1307,18 +1258,12 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
 
   }
     );
-    app.delete(
-  '/api/comment/:commentId',
-  async (req, res) => {
-
+    app.delete( '/api/comment/:commentId', verifyToken, verifyClient, async (req, res) => {
     try {
-
       const { commentId } =
         req.params;
-
       const { userId } =
         req.body;
-
       const comment =
         await commentCollection.findOne({
           _id: new ObjectId(
@@ -1370,7 +1315,7 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
 
   }
     );
-    app.patch( '/api/comment/:commentId', myLogger, async (req, res) => {
+    app.patch( '/api/comment/:commentId', verifyToken, verifyClient, async (req, res) => {
     try {
       const { commentId } =
         req.params;
@@ -1452,12 +1397,8 @@ app.get('/api/hiring-request/user/:user_id', async (req, res) => {
 );
 
 
-app.get(
-  '/api/admin/analytics',
-  async (req, res) => {
-
+app.get( '/api/admin/analytics', verifyToken, verifyAdmin, async (req, res) => {
     try {
-
       const [
         users,
         lawyers,
@@ -1512,10 +1453,7 @@ app.get(
 );
 
 
-app.get(
-  '/api/admin/transactions',
-  async (req, res) => {
-
+app.get('/api/admin/transactions', verifyToken, verifyAdmin, async (req, res) => {
     try {
 
       const transactions =
@@ -1631,12 +1569,8 @@ app.get(
   }
 );
 
-app.get(
-  '/api/admin/users',
-  async (req, res) => {
-
+app.get( '/api/admin/users', verifyToken, verifyAdmin, async (req, res) => {
     try {
-
       const users =
         await userCollection
           .find({})
@@ -1655,6 +1589,38 @@ app.get(
       });
 
     }
+
+  }
+);
+
+app.post(
+  "/api/complete-registration",
+  verifyToken,
+  async (req, res) => {
+
+    const { role } = req.body;
+
+    if (
+      role !== "client" &&
+      role !== "lawyer"
+    ) {
+      return res.status(400).send({
+        message: "Invalid role"
+      });
+    }
+
+    await userCollection.updateOne(
+      {
+        _id: new ObjectId(req.user.id)
+      },
+      {
+        $set: { role }
+      }
+    );
+
+    res.send({
+      success: true
+    });
 
   }
 );
