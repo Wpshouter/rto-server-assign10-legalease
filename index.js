@@ -87,8 +87,34 @@ async function run() {
     const hiringRequestCollection = database.collection('hiring_request');
     const userCollection = database.collection('user');
     const commentCollection = database.collection('comments');
+    const sessionCollections = database.collection('session');
 
-    app.post('/api/legal_profiles', verifyToken, verifyLawyer, async (req, res) => {
+
+    const verifytokenFixed = async(req,res,next) => {
+        const authHeaderval = req.headers?.authorization;
+        if(!authHeaderval){
+          return res.status(401).send({message: 'unauthorized access'})
+        }
+        const token = authHeaderval.split(" ")[1];
+        if(!token){
+          return res.status(401).send({message: 'unauthorized access'})
+        }
+        const query = {token:token};
+        const session = await sessionCollections.findOne(query);
+        if(!session){
+          return res.status(401).send({message: 'unauthorized access'})
+        }
+        const userId = session.userId
+        const userQuery = {_id: userId} 
+        const user = await userCollection.findOne(userQuery);
+        if(!user){
+          return res.status(401).send({message: 'unauthorized access'})
+        }
+        //console.log('user of the sessio', user);
+        req.user = user;
+        next();
+    }
+    app.post('/api/legal_profiles', verifytokenFixed, verifyLawyer, async (req, res) => {
 
       const profile = req.body;
 
@@ -293,7 +319,7 @@ async function run() {
 
     //   }
     // });
-app.get('/api/hiring-request/user/:user_id', verifyToken, verifyClient,  async (req, res) => {
+app.get('/api/hiring-request/user/:user_id', verifytokenFixed, verifyClient,  async (req, res) => {
     try {
 
       const userId =
@@ -524,7 +550,7 @@ app.get('/api/hiring-request/user/:user_id', verifyToken, verifyClient,  async (
 
     // });
 
-    app.get( '/api/hiring-request/lawyer/:lawyer_id', verifyToken, verifyLawyer, async (req, res) => {
+    app.get( '/api/hiring-request/lawyer/:lawyer_id', verifytokenFixed, verifyLawyer, async (req, res) => {
 
     try {
 
@@ -679,7 +705,7 @@ app.get('/api/hiring-request/user/:user_id', verifyToken, verifyClient,  async (
     });
 
 
-    app.post("/api/lawyer/approve-request", verifyToken,  verifyLawyer, async (req, res) => {
+    app.post("/api/lawyer/approve-request", verifytokenFixed,  verifyLawyer, async (req, res) => {
       try {
         const { requestId, status, } = req.body;
         if (!requestId) {
@@ -725,7 +751,7 @@ app.get('/api/hiring-request/user/:user_id', verifyToken, verifyClient,  async (
         });
       }
     });
-    app.post('/api/hiring-request', verifyToken, async (req, res) => {
+    app.post('/api/hiring-request', verifytokenFixed, async (req, res) => {
       const hiringRequest = req.body;
       const exisitng_same_user_req = await hiringRequestCollection.findOne({
         lawyerId: hiringRequest.lawyerId,
@@ -752,7 +778,7 @@ app.get('/api/hiring-request/user/:user_id', verifyToken, verifyClient,  async (
 
 
     })
-    app.post('/api/hiring-history', verifyToken, async (req, res) => {
+    app.post('/api/hiring-history', verifytokenFixed, async (req, res) => {
       try {
         const hiringHistory = req.body;
         if (!hiringHistory?.payment_intent_id) {
@@ -800,7 +826,7 @@ app.get('/api/hiring-request/user/:user_id', verifyToken, verifyClient,  async (
 
     });
 
-    app.get( '/api/payments/lawyer/:lawyerId', verifyToken, verifyLawyer, async (req, res) => {
+    app.get( '/api/payments/lawyer/:lawyerId', verifytokenFixed, verifyLawyer, async (req, res) => {
     try {
       const { lawyerId } =
         req.params;
@@ -979,7 +1005,7 @@ app.get('/api/hiring-request/user/:user_id', verifyToken, verifyClient,  async (
 
 
     //
-    app.post( '/api/comment', verifyToken,  verifyClient, async (req, res) => {
+    app.post( '/api/comment', verifytokenFixed,  verifyClient, async (req, res) => {
 
     try {
 
@@ -1165,7 +1191,7 @@ app.get('/api/hiring-request/user/:user_id', verifyToken, verifyClient,  async (
     });
 
     //get comment users
-    app.get( '/api/comments/user/:userId', verifyToken, verifyClient, async (req, res) => {
+    app.get( '/api/comments/user/:userId', verifytokenFixed, verifyClient, async (req, res) => {
     try {
 
       const { userId } =
@@ -1261,7 +1287,7 @@ app.get('/api/hiring-request/user/:user_id', verifyToken, verifyClient,  async (
 
   }
     );
-    app.delete( '/api/comment/:commentId', verifyToken, verifyClient, async (req, res) => {
+    app.delete( '/api/comment/:commentId', verifytokenFixed, verifyClient, async (req, res) => {
     try {
       const { commentId } =
         req.params;
@@ -1318,7 +1344,7 @@ app.get('/api/hiring-request/user/:user_id', verifyToken, verifyClient,  async (
 
   }
     );
-    app.patch( '/api/comment/:commentId', verifyToken, verifyClient, async (req, res) => {
+    app.patch( '/api/comment/:commentId', verifytokenFixed, verifyClient, async (req, res) => {
     try {
       const { commentId } =
         req.params;
@@ -1400,7 +1426,7 @@ app.get('/api/hiring-request/user/:user_id', verifyToken, verifyClient,  async (
 );
 
 
-app.get( '/api/admin/analytics', verifyToken, verifyAdmin, async (req, res) => {
+app.get( '/api/admin/analytics', verifytokenFixed, verifyAdmin, async (req, res) => {
     try {
       const [
         users,
@@ -1456,7 +1482,7 @@ app.get( '/api/admin/analytics', verifyToken, verifyAdmin, async (req, res) => {
 );
 
 
-app.get('/api/admin/transactions', verifyToken, verifyAdmin, async (req, res) => {
+app.get('/api/admin/transactions', verifytokenFixed, verifyAdmin, async (req, res) => {
     try {
 
       const transactions =
@@ -1572,7 +1598,7 @@ app.get('/api/admin/transactions', verifyToken, verifyAdmin, async (req, res) =>
   }
 );
 
-app.get( '/api/admin/users', verifyToken, verifyAdmin, async (req, res) => {
+app.get( '/api/admin/users', verifytokenFixed, verifyAdmin, async (req, res) => {
     try {
       const users =
         await userCollection
@@ -1598,7 +1624,7 @@ app.get( '/api/admin/users', verifyToken, verifyAdmin, async (req, res) => {
 
 app.post(
   "/api/complete-registration",
-  verifyToken,
+  verifytokenFixed,
   async (req, res) => {
 
     const { role } = req.body;
